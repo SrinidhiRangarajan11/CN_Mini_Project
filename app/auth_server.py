@@ -1,0 +1,109 @@
+import socket
+import threading
+import logging
+import requests
+
+# Configure logging to save auth events into results/auth.log
+logging.basicConfig(
+    filename='results/auth.log',
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+
+# Credential store (Username: Password)
+USER_CREDENTIALS = {
+    "alice": "password123",
+    "bob": "secure456",
+    "charlie": "tcp789"
+}
+
+# Active sessions tracker
+ACTIVE_SESSIONS = {}
+
+# SDN Controller REST API endpoint (To be integrated with Member 2)
+CONTROLLER_URL = "http://127.0.0.1:8080/auth/policy"
+
+def notify_controller(client_ip, action):
+    """Sends a trigger to the SDN controller to install/remove flow rules[cite: 14]."""
+    payload = {"ip": client_ip, "action": action}
+    try:
+        # requests.post(CONTROLLER_URL, json=payload, timeout=2)
+        print(f"[SDN SYNC] Successfully notified controller: Action '{action}' for IP {client_ip}")
+    except requests.exceptions.RequestException as e:
+        print(f"[SDN SYNC ERROR] Could not reach SDN controller: {e}")
+
+def handle_client(client_socket, client_address):
+    """Handles individual client session in a separate thread for concurrency[cite: 2, 14]."""
+    client_ip = client_address[0]
+    print(f"[+] Auth connection accepted from {client_ip}:{client_address[1]}")
+    current_user = None
+    
+    try:
+        while True:
+            data = client_socket.recv(1024).decode('utf-8').strip()
+            if not data:
+                break
+                
+            print(f"Received command from {client_ip}: {data}")
+            parts = data.split(' ')
+            command = parts[0].upper()
+            
+            if command == "LOGIN" and len(parts) == 3:
+                username, password = parts[1], parts[2]
+                
+                if username in USER_CREDENTIALS and USER_CREDENTIALS[username] == password:
+                    token = f"TOKEN_{username}_XYZ999"
+                    ACTIVE_SESSIONS[token] = username
+                    current_user = username
+                    
+                    response = f"AUTH_OK TOKEN:{token}\n"
+                    client_socket.sendall(response.encode('utf-8'))
+                    
+                    logging.info(f"SUCCESSFUL_LOGIN user={username} ip={client_ip}")
+                    print(f"[AUTH] User '{username}' authenticated successfully.")
+                    
+                    notify_controller(client_ip, "GRANT")
+                else:
+                    response = "AUTH_FAIL Invalid credentials\n"
+                    client_socket.sendall(response.encode('utf-8'))
+                    logging.warning(f"FAILED_LOGIN attempt_user={username} ip={client_ip}")
+                    print(f"[AUTH] Failed login attempt for user '{username}' from {client_ip}")
+                    
+            elif command == "LOGOUT":
+                if current_user:
+                    logging.info(f"LOGOUT user={current_user} ip={client_ip}")
+                    print(f"[AUTH] User '{current_user}' logged out.")
+                
+                notify_controller(client_ip, "REVOKE")
+                client_socket.sendall(b"LOGOUT_SUCCESS\n")
+                break
+            else:
+                client_socket.sendall(b"ERROR Unknown command or bad syntax\n")
+                
+    except Exception as e:
+        print(f"[ERROR] Exception with client {client_ip}: {e}")
+    finally:
+        client_socket.close()
+        print(f"[-] Connection closed for {client_ip}")
+
+def start_auth_server(host='0.0.0.0', port=9000):
+    """Starts the multi-threaded TCP Authentication Server[cite: 2, 14]."""
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server.bind((host, port))
+    server.listen(5)
+    print(f"[*] TCP Auth Server listening on {host}:{port}...")
+    
+    try:
+        while True:
+            client_socket, client_address = server.accept()
+            client_thread = threading.Thread(target=handle_client, args=(client_socket, client_address))
+            client_thread.daemon = True
+            client_thread.start()
+    except KeyboardInterrupt:
+        print("\n[*] Shutting down Auth Server...")
+    finally:
+        server.close()
+
+if __name__ == "__main__":
+    start_auth_server()

@@ -1,0 +1,23 @@
+# Network configuration
+
+# Mininet host IP addresses
+CLIENT_IP = "10.0.0.1"
+AUTH_SERVER_IP = "10.0.0.2"
+PROTECTED_SERVICE_IP = "10.0.0.3"
+
+# TCP ports
+AUTH_SERVER_PORT = 9000
+PROTECTED_SERVICE_PORT = 8080
+
+# Controller REST API
+REST_HOST = "0.0.0.0"
+REST_PORT = 8081
+
+# OpenFlow priorities
+DEFAULT_PRIORITY = 0
+AUTH_ALLOW_PRIORITY = 100
+PROTECTED_ALLOW_PRIORITY = 200
+BLOCK_PRIORITY = 300
+
+# OpenFlow settings
+OFP_VERSION = 0x04  # OpenFlow 1.3

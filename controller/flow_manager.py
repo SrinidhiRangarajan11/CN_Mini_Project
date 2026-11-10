@@ -1,4 +1,5 @@
 import ipaddress
+from controller import config
 
 
 def add_flow(datapath, priority, match, actions=None, cookie=0):
@@ -57,8 +58,8 @@ def grant_access(datapath, client_ip, service_ip, service_port):
     ]
 
     # Priority 400 overrides the default block at 300.
-    add_flow(datapath, 400, forward_match, actions, cookie)
-    add_flow(datapath, 400, reverse_match, actions, cookie)
+    add_flow(datapath, config.AUTH_ALLOW_PRIORITY, forward_match, actions, cookie)
+    add_flow(datapath, config.AUTH_ALLOW_PRIORITY, reverse_match, actions, cookie)
 
     return cookie
 

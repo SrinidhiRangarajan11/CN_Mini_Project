@@ -1,109 +1,360 @@
+import os
 import socket
 import threading
 import logging
+import secrets
+import time
 import requests
 
-# Configure logging to save auth events into results/auth.log
+# Project paths and logging
+PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+RESULTS_DIR = os.path.join(PROJECT_DIR, "results")
+os.makedirs(RESULTS_DIR, exist_ok=True)
+
 logging.basicConfig(
-    filename='results/auth.log',
+    filename=os.path.join(RESULTS_DIR, "auth.log"),
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 
-# Credential store (Username: Password)
+# Credential store (demonstration purposes)
 USER_CREDENTIALS = {
     "alice": "password123",
     "bob": "secure456",
     "charlie": "tcp789"
 }
 
-# Active sessions tracker
+# Active sessions
 ACTIVE_SESSIONS = {}
+ACTIVE_CLIENTS = {}
+SESSION_LOCK = threading.Lock()
 
-# SDN Controller REST API endpoint (To be integrated with Member 2)
+# SDN Controller REST API
 CONTROLLER_URL = "http://10.0.0.254:8081/auth/policy"
 
+
 def notify_controller(client_ip, action):
-    """Sends a trigger to the SDN controller to install/remove flow rules[cite: 14]."""
-    payload = {"ip": client_ip, "action": action}
+    """Notify the SDN controller about an access-policy change."""
+
+    payload = {
+        "ip": client_ip,
+        "action": action
+    }
+
     try:
-        requests.post(CONTROLLER_URL, json=payload, timeout=2)
-        print(f"[SDN SYNC] Successfully notified controller: Action '{action}' for IP {client_ip}")
+        response = requests.post(
+            CONTROLLER_URL,
+            json=payload,
+            timeout=3
+        )
+
+        response.raise_for_status()
+
+        print(
+            f"[SDN SYNC] Controller confirmed {action} "
+            f"for {client_ip}"
+        )
+
+        return True
+
     except requests.exceptions.RequestException as e:
-        print(f"[SDN SYNC ERROR] Could not reach SDN controller: {e}")
+        logging.error(
+            "CONTROLLER_ERROR action=%s ip=%s error=%s",
+            action, client_ip, e
+        )
+
+        print(f"[SDN SYNC ERROR] {e}")
+        return False
+
+
+def remove_session(client_ip, token):
+    """Remove a session from the in-memory session tracker."""
+
+    with SESSION_LOCK:
+        ACTIVE_SESSIONS.pop(token, None)
+
+        if ACTIVE_CLIENTS.get(client_ip) == token:
+            ACTIVE_CLIENTS.pop(client_ip, None)
+
+
+def send_response(client_socket, message):
+    try:
+        client_socket.sendall((message + "\n").encode("utf-8"))
+    except OSError:
+        pass
+
 
 def handle_client(client_socket, client_address):
-    """Handles individual client session in a separate thread for concurrency[cite: 2, 14]."""
+    """Handle one client connection."""
+
     client_ip = client_address[0]
-    print(f"[+] Auth connection accepted from {client_ip}:{client_address[1]}")
+
+    print(
+        f"[+] Auth connection accepted from "
+        f"{client_ip}:{client_address[1]}"
+    )
+
     current_user = None
-    
+    current_token = None
+    access_granted = False
+    reader = None
+
     try:
+        # Read newline-delimited TCP commands.
+        reader = client_socket.makefile("r", encoding="utf-8")
+
         while True:
-            data = client_socket.recv(1024).decode('utf-8').strip()
+            data = reader.readline()
+
             if not data:
                 break
-                
-            print(f"Received command from {client_ip}: {data}")
-            parts = data.split(' ')
+
+            parts = data.strip().split()
+
+            if not parts:
+                continue
+
             command = parts[0].upper()
-            
-            if command == "LOGIN" and len(parts) == 3:
+
+            if command == "LOGIN":
+
+                if len(parts) != 3:
+                    send_response(
+                        client_socket,
+                        "ERROR Invalid LOGIN syntax"
+                    )
+                    continue
+
+                if current_token is not None:
+                    send_response(
+                        client_socket,
+                        "AUTH_FAIL Already authenticated"
+                    )
+                    continue
+
                 username, password = parts[1], parts[2]
-                
-                if username in USER_CREDENTIALS and USER_CREDENTIALS[username] == password:
-                    token = f"TOKEN_{username}_XYZ999"
-                    ACTIVE_SESSIONS[token] = username
-                    current_user = username
-                    
-                    response = f"AUTH_OK TOKEN:{token}\n"
-                    client_socket.sendall(response.encode('utf-8'))
-                    
-                    logging.info(f"SUCCESSFUL_LOGIN user={username} ip={client_ip}")
-                    print(f"[AUTH] User '{username}' authenticated successfully.")
-                    
-                    notify_controller(client_ip, "GRANT")
-                else:
-                    response = "AUTH_FAIL Invalid credentials\n"
-                    client_socket.sendall(response.encode('utf-8'))
-                    logging.warning(f"FAILED_LOGIN attempt_user={username} ip={client_ip}")
-                    print(f"[AUTH] Failed login attempt for user '{username}' from {client_ip}")
-                    
+
+                if (
+                    username not in USER_CREDENTIALS
+                    or USER_CREDENTIALS[username] != password
+                ):
+                    logging.warning(
+                        "FAILED_LOGIN attempt_user=%s ip=%s",
+                        username, client_ip
+                    )
+
+                    send_response(
+                        client_socket,
+                        "AUTH_FAIL Invalid credentials"
+                    )
+
+                    print(
+                        f"[AUTH] Failed login for '{username}' "
+                        f"from {client_ip}"
+                    )
+                    continue
+
+                # Generate an unpredictable session token.
+                token = secrets.token_urlsafe(32)
+
+                # This topology uses IP-based access policies.
+                # Prevent multiple simultaneous sessions from
+                # competing for the same client's access rules.
+                with SESSION_LOCK:
+                    already_active = client_ip in ACTIVE_CLIENTS
+
+                    if not already_active:
+                        ACTIVE_CLIENTS[client_ip] = token
+
+                if already_active:
+                    send_response(
+                        client_socket,
+                        "AUTH_FAIL A session is already active"
+                    )
+                    continue
+
+                current_user = username
+                current_token = token
+
+                # Do not report successful authentication until
+                # the controller confirms the GRANT operation.
+                if not notify_controller(client_ip, "GRANT"):
+
+                    # Best-effort rollback in case the controller
+                    # processed the request but its response was lost.
+                    notify_controller(client_ip, "REVOKE")
+
+                    remove_session(client_ip, token)
+
+                    current_user = None
+                    current_token = None
+
+                    send_response(
+                        client_socket,
+                        "AUTH_FAIL Controller unavailable"
+                    )
+                    continue
+
+                access_granted = True
+
+                with SESSION_LOCK:
+                    ACTIVE_SESSIONS[token] = {
+                        "username": username,
+                        "client_ip": client_ip,
+                        "created_at": time.time()
+                    }
+
+                logging.info(
+                    "SUCCESSFUL_LOGIN user=%s ip=%s",
+                    username, client_ip
+                )
+
+                print(
+                    f"[AUTH] User '{username}' authenticated."
+                )
+
+                send_response(
+                    client_socket,
+                    f"AUTH_OK TOKEN:{token}"
+                )
+
             elif command == "LOGOUT":
-                if current_user:
-                    logging.info(f"LOGOUT user={current_user} ip={client_ip}")
-                    print(f"[AUTH] User '{current_user}' logged out.")
-                
-                notify_controller(client_ip, "REVOKE")
-                client_socket.sendall(b"LOGOUT_SUCCESS\n")
+
+                if len(parts) != 1:
+                    send_response(
+                        client_socket,
+                        "ERROR Invalid LOGOUT syntax"
+                    )
+                    continue
+
+                if current_token is None:
+                    send_response(
+                        client_socket,
+                        "LOGOUT_SUCCESS No active session"
+                    )
+                    break
+
+                if notify_controller(client_ip, "REVOKE"):
+
+                    access_granted = False
+
+                    logging.info(
+                        "LOGOUT user=%s ip=%s",
+                        current_user, client_ip
+                    )
+
+                    remove_session(client_ip, current_token)
+
+                    current_user = None
+                    current_token = None
+
+                    send_response(
+                        client_socket,
+                        "LOGOUT_SUCCESS"
+                    )
+
+                    print(
+                        f"[AUTH] Client {client_ip} logged out."
+                    )
+
+                else:
+                    # Keep the session marked as active so the
+                    # finally block can make another revoke attempt.
+                    send_response(
+                        client_socket,
+                        "LOGOUT_FAILED Controller revocation unconfirmed"
+                    )
+
                 break
+
             else:
-                client_socket.sendall(b"ERROR Unknown command or bad syntax\n")
-                
+                send_response(
+                    client_socket,
+                    "ERROR Unknown command"
+                )
+
     except Exception as e:
-        print(f"[ERROR] Exception with client {client_ip}: {e}")
+        logging.exception(
+            "CLIENT_HANDLER_ERROR ip=%s",
+            client_ip
+        )
+        print(f"[ERROR] Client {client_ip}: {e}")
+
     finally:
+
+        # Revoke access when the TCP connection closes unexpectedly,
+        # including when the client chooses not to log out.
+        if current_token is not None:
+
+            if access_granted:
+
+                print(
+                    f"[AUTH] Revoking access for disconnected "
+                    f"client {client_ip}"
+                )
+
+                if not notify_controller(client_ip, "REVOKE"):
+                    logging.critical(
+                        "REVOCATION_FAILED ip=%s; "
+                        "access rules may remain installed",
+                        client_ip
+                    )
+                else:
+                    logging.info(
+                        "DISCONNECT_REVOKE ip=%s user=%s",
+                        client_ip, current_user
+                    )
+
+            remove_session(client_ip, current_token)
+
+        if reader is not None:
+            reader.close()
+
         client_socket.close()
+
         print(f"[-] Connection closed for {client_ip}")
 
-def start_auth_server(host='0.0.0.0', port=9000):
-    """Starts the multi-threaded TCP Authentication Server[cite: 2, 14]."""
-    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+
+def start_auth_server(host="0.0.0.0", port=9000):
+    """Start the multithreaded TCP authentication server."""
+
+    server = socket.socket(
+        socket.AF_INET,
+        socket.SOCK_STREAM
+    )
+
+    server.setsockopt(
+        socket.SOL_SOCKET,
+        socket.SO_REUSEADDR,
+        1
+    )
+
     server.bind((host, port))
-    server.listen(5)
-    print(f"[*] TCP Auth Server listening on {host}:{port}...")
-    
+    server.listen(10)
+
+    print(
+        f"[*] TCP Auth Server listening on {host}:{port}..."
+    )
+
     try:
         while True:
+
             client_socket, client_address = server.accept()
-            client_thread = threading.Thread(target=handle_client, args=(client_socket, client_address))
-            client_thread.daemon = True
+
+            client_thread = threading.Thread(
+                target=handle_client,
+                args=(client_socket, client_address),
+                daemon=True
+            )
+
             client_thread.start()
+
     except KeyboardInterrupt:
-        print("\n[*] Shutting down Auth Server...")
+        print("\n[*] Shutting down Authentication Server...")
+
     finally:
         server.close()
+
 
 if __name__ == "__main__":
     start_auth_server()

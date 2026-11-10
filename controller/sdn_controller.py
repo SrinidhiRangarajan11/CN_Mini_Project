@@ -1,20 +1,18 @@
 
-from ryu.base import app_manager
-from ryu.controller import ofp_event
-from ryu.controller.handler import CONFIG_DISPATCHER, MAIN_DISPATCHER, set_ev_cls
-from ryu.ofproto import ofproto_v1_3
-from ryu.lib.packet import packet, ethernet, ether_types
-from ryu.app.wsgi import WSGIApplication
+from os_ken.base import app_manager
+from os_ken.controller import ofp_event
+from os_ken.controller.handler import CONFIG_DISPATCHER, MAIN_DISPATCHER, set_ev_cls
+from os_ken.ofproto import ofproto_v1_3
+from os_ken.lib.packet import packet, ethernet, ether_types
 
 from controller import config
 from controller.flow_manager import grant_access, revoke_access
 from controller.access_logger import log_access, log_security_event
-from controller.rest_api import AuthPolicyAPI
+from controller.rest_api import start_auth_api
 
 
-class SDNAuthController(app_manager.RyuApp):
+class SDNAuthController(app_manager.OSKenApp):
     OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
-    _CONTEXTS = {'wsgi': WSGIApplication}
 
     def __init__(self, *args, **kwargs):
         super(SDNAuthController, self).__init__(*args, **kwargs)
@@ -22,8 +20,9 @@ class SDNAuthController(app_manager.RyuApp):
         self.datapaths = {}
         self.mac_to_port = {}
 
-        wsgi = kwargs['wsgi']
-        wsgi.register(AuthPolicyAPI, {'sdn_app': self})
+        self.auth_api_server = start_auth_api(
+            self, config.REST_HOST, config.REST_PORT
+        )
 
         self.logger.info("SDN Authentication Controller started")
 
@@ -45,7 +44,7 @@ class SDNAuthController(app_manager.RyuApp):
 
         drop_flow = parser.OFPFlowMod(
             datapath=datapath,
-            priority=300,
+            priority=config.BLOCK_PRIORITY,
             match=match,
             instructions=[]
         )
@@ -69,7 +68,7 @@ class SDNAuthController(app_manager.RyuApp):
 
         table_miss = parser.OFPFlowMod(
             datapath=datapath,
-            priority=0,
+            priority=config.TABLE_MISS_PRIORITY,
             match=match,
             instructions=instructions
         )
@@ -127,7 +126,7 @@ class SDNAuthController(app_manager.RyuApp):
 
             flow = parser.OFPFlowMod(
                 datapath=datapath,
-                priority=1,
+                priority=config.MAC_FORWARD_PRIORITY,
                 match=match,
                 instructions=instructions
             )

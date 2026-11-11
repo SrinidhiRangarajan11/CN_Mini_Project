@@ -2,7 +2,7 @@ import socket
 import sys
 
 def run_client():
-    auth_server_ip = '127.0.0.1'
+    auth_server_ip = '10.0.0.2'
     auth_server_port = 9000
     
     print("[CLIENT] Connecting to TCP Authentication Server...")
@@ -29,7 +29,7 @@ def run_client():
         if test_service.lower() == 'y':
             try:
                 service_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                service_sock.connect(('127.0.0.1', 8080))
+                service_sock.connect(('10.0.0.3', 8080))
                 msg = service_sock.recv(1024).decode('utf-8')
                 print(f"[PROTECTED SERVICE DATA] {msg.strip()}")
                 service_sock.close()

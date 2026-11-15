@@ -2,8 +2,8 @@ from os_ken.base import app_manager
 from os_ken.controller import ofp_event
 from os_ken.controller.handler import CONFIG_DISPATCHER, MAIN_DISPATCHER
 from os_ken.controller.handler import set_ev_cls
-from os_ken.ofproto import ofproto_v1_3
-from os_ken.lib.packet import packet, ethernet, arp, ipv4, ether
+from os_ken.ofproto import ofproto_v1_3, ether
+from os_ken.lib.packet import packet, ethernet, arp, ipv4
 from os_ken.wsgi import WSGIApplication
 from controller import flow_manager, rest_api, config
 

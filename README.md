@@ -102,37 +102,9 @@ The default DROP rule remains active.
 
 ## 7. Project Structure
 
-```text
-CN_Mini_Project/
-|
-|-- app/
-|   |-- auth_server.py
-|   |-- client.py
-|   |-- protected_server.py
-|
-|-- controller/
-|   |-- __init__.py
-|   |-- access_logger.py
-|   |-- config.py
-|   |-- flow_manager.py
-|   |-- rest_api.py
-|   |-- sdn_controller.py
-|
-|-- topology/
-|   |-- topo.py
-|
-|-- results/
-|   |-- auth.log
-|
-|-- logs/
-|   |-- access.log
-|
-|-- auth_server.py
-|-- client.py
-|-- protected_server.py
-|-- .gitignore
-|-- README.md
-```
+<img src="project_structure.png" width="400" alt="CN_Mini_Project Directory and Module Structure Map">
+
+The root-level server and client files contain the integrated Mininet implementation. The `app/` directory retains the original application files.
 
 The root-level server and client files contain the integrated Mininet implementation. The `app/` directory retains the original application files.
 

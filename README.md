@@ -32,7 +32,7 @@ The project consists of five main components:
 
 ### Architecture Diagram
 
-<img src="architecture.png" width="400" alt="SDN Authentication Network Architecture">
+<img src="asset/architecture.png" width="400" alt="SDN Authentication Network Architecture">
 
 ## 4. Network Configuration
 
@@ -102,7 +102,7 @@ The default DROP rule remains active.
 
 ## 7. Project Structure
 
-<img src="project_structure.png" width="750" alt="CN_Mini_Project Directory and Module Structure Map">
+<img src="asset/project_structure.png" width="750" alt="CN_Mini_Project Directory and Module Structure Map">
 
 The root-level server and client files contain the integrated Mininet implementation. The `app/` directory retains the original application files.
 

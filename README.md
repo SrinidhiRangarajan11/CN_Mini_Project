@@ -30,7 +30,9 @@ The project consists of five main components:
 
 ### Architecture Diagram
 
-![SDN Authentication Network Architecture](architecture.png)
+### Architecture Diagram
+
+<img src="architecture.png" width="400" alt="SDN Authentication Network Architecture">
 
 ## 4. Network Configuration
 

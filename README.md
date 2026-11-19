@@ -102,7 +102,7 @@ The default DROP rule remains active.
 
 ## 7. Project Structure
 
-<img src="project_structure.png" width="400" alt="CN_Mini_Project Directory and Module Structure Map">
+<img src="project_structure.png" width="600" alt="CN_Mini_Project Directory and Module Structure Map">
 
 The root-level server and client files contain the integrated Mininet implementation. The `app/` directory retains the original application files.
 

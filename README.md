@@ -30,44 +30,7 @@ The project consists of five main components:
 
 ### Architecture Diagram
 
-```text
-                 +----------------------+
-                 |      Client h1       |
-                 |      10.0.0.1        |
-                 +----------+-----------+
-                            |
-                            | TCP / 9000
-                            v
-                 +----------------------+
-                 | Authentication       |
-                 | Server: h_auth       |
-                 | 10.0.0.2             |
-                 +----------+-----------+
-                            |
-                            | HTTP POST
-                            | /auth/policy
-                            v
-                 +----------------------+
-                 | OS-Ken SDN           |
-                 | Controller           |
-                 +----------+-----------+
-                            |
-                            | OpenFlow 1.3
-                            | Port 6653
-                            v
-                 +----------------------+
-                 | Open vSwitch: s1     |
-                 | Access Control       |
-                 +----------+-----------+
-                            |
-                            | TCP / 8080
-                            v
-                 +----------------------+
-                 | Protected Service    |
-                 | h_service            |
-                 | 10.0.0.3             |
-                 +----------------------+
-```
+![SDN Authentication Network Architecture](architecture.png)
 
 ## 4. Network Configuration
 
